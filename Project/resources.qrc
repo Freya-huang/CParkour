@@ -1,0 +1,20 @@
+<RCC>
+    <!--
+      资源约定：
+      - 将素材放到工程目录的 images/ 下
+      - 并在此处添加到 qrc（prefix=/images）
+      示例：
+        &lt;file&gt;images/dog_run1.png&lt;/file&gt;
+    -->
+    <qresource prefix="/images">
+        <!-- 使用 alias 保证资源路径为 :/images/&lt;filename&gt; -->
+        <file alias="menu.png">images/menu.png</file>
+        <file alias="heart.png">images/heart.png</file>
+        <file alias="dog_run1.png">images/dog_run1.png</file>
+        <file alias="dog_run2.png">images/dog_run2.png</file>
+        <file alias="coin.png">images/coin.png</file>
+        <file alias="scene.png">images/scene.png</file>
+        <file alias="obstacle.png">images/obstacle.png</file>
+    </qresource>
+</RCC>
+

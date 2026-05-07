@@ -68,6 +68,6 @@ LineDogParkour 是一款基于 Qt 的 2D 跑酷游戏，玩家需要控制一只
 ## 开发者信息
 - **作者**：Freya
 - **日期**：2026年5月2日
-- **联系**：freya@example.com
+- **联系**：xiaoyuhuang@gmail.com
 
 祝您玩得愉快！
