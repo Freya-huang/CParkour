@@ -8,30 +8,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
-qt_standard_project_setup()
-
-set(SOURCES
-    main.cpp
-    MainWindow.cpp
-    DogItem.cpp
-    Platform.cpp
-    Coin.cpp
-    Obstacle.cpp
-)
-
-set(HEADERS
-    Config.h
-    Entity.h
-    MainWindow.h
-    DogItem.h
-    Platform.h
-    Coin.h
-    Obstacle.h
-)
+set(CMAKE_AUTOMOC ON)
 
 qt_add_executable(LineDogParkour
-    ${SOURCES}
-    ${HEADERS}
+    game.cpp
 )
 
 qt_add_resources(LineDogParkour_resources resources.qrc)
