@@ -15,6 +15,9 @@
         <file alias="coin.png">images/coin.png</file>
         <file alias="scene.png">images/scene.png</file>
         <file alias="obstacle.png">images/obstacle.png</file>
+        <file alias="block.png">images/block.png</file>
+        <file alias="question_block.png">images/question_block.png</file>
+        <file alias="question_block_used.png">images/question_block_used.png</file>
     </qresource>
 </RCC>
 
