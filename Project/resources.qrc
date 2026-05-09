@@ -14,10 +14,17 @@
         <file alias="dog_run2.png">images/dog_run2.png</file>
         <file alias="coin.png">images/coin.png</file>
         <file alias="scene.png">images/scene.png</file>
+        <file alias="ground.png">images/ground.png</file>
         <file alias="obstacle.png">images/obstacle.png</file>
         <file alias="block.png">images/block.png</file>
         <file alias="question_block.png">images/question_block.png</file>
         <file alias="question_block_used.png">images/question_block_used.png</file>
+        <!-- 推箱子模式资源 -->
+        <file alias="basket.png">images/basket.png</file>
+        <file alias="wall.png">images/wall.png</file>
+        <file alias="target.png">images/target.png</file>
+        <file alias="yarn_ball.png">images/yarn_ball.png</file>
+        <file alias="yarn_ball_on_target.png">images/yarn_ball_on_target.png</file>
     </qresource>
 </RCC>
 

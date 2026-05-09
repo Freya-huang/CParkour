@@ -65,6 +65,7 @@ public:
     int bounceTimer;  // 被顶时的弹跳动画
     QPixmap questionBlockImg;  // 问号方块图片
     QPixmap questionBlockUsedImg;  // 使用后的问号方块图片
+    static QPixmap* groundImage;  // 静态地面图片指针
     
     Platform(double x, double y, double w, double h, PlatformType t = GROUND) {
         pos = QPointF(x, y);
@@ -74,7 +75,13 @@ public:
         bounceTimer = 0;
         
         if (type == GROUND) {
-            image = QPixmap(":/images/scene.png");
+            // 地面使用静态地面图片
+            if (groundImage && !groundImage->isNull()) {
+                image = *groundImage;
+            } else {
+                // 如果静态图片未设置，尝试直接加载
+                image = QPixmap(":/images/scene.png");
+            }
         } else if (type == QUESTION) {
             // 加载问号方块图片
             questionBlockImg = QPixmap(":/images/question_block.png");
@@ -151,6 +158,9 @@ public:
     }
 };
 
+// 初始化静态成员
+QPixmap* Platform::groundImage = nullptr;
+
 // 金币
 class Coin : public GameObject {
 public:
@@ -218,7 +228,7 @@ class Obstacle : public GameObject {
 public:
     Obstacle(double x, double y) {
         pos = QPointF(x, y);
-        size = QSizeF(64, 48);  // 改成64宽x48高，更矮，可以跳过
+        size = QSizeF(64, 48);  
         image = QPixmap(":/images/obstacle.png");
     }
 };
@@ -359,17 +369,433 @@ public:
             if (coyoteTime < 0) coyoteTime = 0;
         }
         
-        // 动画（速度越快，动画越快）
-        int animSpeed = 100;
-        if (std::abs(speedX) > MAX_SPEED_WALK) {
-            animSpeed = 60;  // 奔跑时动画更快
-        }
-        animTimer += (int)(dt * 1000);
-        if (animTimer >= animSpeed) {
-            animTimer = 0;
-            showImg1 = !showImg1;
+        // 动画（只在有水平移动时播放）
+        if (std::abs(speedX) > 10.0f) {  // 只有当速度大于10时才播放动画
+            int animSpeed = 100;
+            if (std::abs(speedX) > MAX_SPEED_WALK) {
+                animSpeed = 60;  // 奔跑时动画更快
+            }
+            animTimer += (int)(dt * 1000);
+            if (animTimer >= animSpeed) {
+                animTimer = 0;
+                showImg1 = !showImg1;
+            }
+        } else {
+            // 静止时保持第一帧
+            showImg1 = true;
         }
         image = showImg1 ? img1 : img2;
+    }
+};
+
+// 毛线筐（触发推箱子关卡的道具）
+class Basket : public GameObject {
+public:
+    bool triggered;  // 是否已触发
+    int animTimer;   // 动画计时器
+    
+    Basket(double x, double y) {
+        pos = QPointF(x, y);
+        size = QSizeF(80, 80);
+        image = QPixmap(":/images/basket.png");
+        triggered = false;
+        animTimer = 0;
+        
+        // 如果图片加载失败，使用纯色后备
+        if (image.isNull()) {
+            image = QPixmap(80, 80);
+            image.fill(QColor(139, 69, 19, 200));  // 棕色半透明
+        }
+    }
+    
+    void draw(QPainter* painter) override {
+        if (painter && !triggered) {
+            // 轻微浮动动画
+            QRectF rect(pos, size);
+            double offset = std::sin(animTimer / 200.0) * 5;
+            rect.translate(0, offset);
+            painter->drawPixmap(rect, image, image.rect());
+            
+            // 绘制提示文字
+            painter->setPen(QColor(255, 200, 0));
+            painter->setFont(QFont("Arial", 12, QFont::Bold));
+            painter->drawText(QRectF(pos.x() - 20, pos.y() - 30, 120, 20), 
+                            Qt::AlignCenter, "解谜关卡");
+        }
+    }
+    
+    void update(float dt) override {
+        animTimer += (int)(dt * 1000);
+    }
+};
+
+// 推箱子管理器
+class SokobanManager {
+public:
+    // 关卡数据
+    std::vector<std::string> levels;
+    int currentLevel;
+    
+    // 网格数据
+    std::vector<std::vector<char>> grid;
+    int gridWidth, gridHeight;
+    int cellSize;  // 每个格子的像素大小
+    
+    // 玩家位置（网格坐标）
+    int playerX, playerY;
+    
+    // 目标点和箱子位置
+    std::vector<QPoint> targets;
+    std::vector<QPoint> boxes;
+    
+    // 动画相关
+    bool isMoving;
+    QPointF playerAnimPos;  // 玩家动画位置（像素坐标）
+    QPointF movingBoxStart;  // 移动中的箱子起始位置
+    QPointF movingBoxEnd;    // 移动中的箱子结束位置
+    int movingBoxIndex;      // 正在移动的箱子索引
+    float moveProgress;      // 移动进度 0-1
+    
+    // 图片资源
+    QPixmap wallImg, targetImg, boxImg, boxOnTargetImg, dogSokobanImg;
+    
+    SokobanManager() {
+        currentLevel = -1;
+        isMoving = false;
+        moveProgress = 0;
+        movingBoxIndex = -1;
+        cellSize = 64;
+        
+        // 初始化关卡数据
+        levels = {
+            // Level 1 (1000分触发 - 双球入门)
+            "###########\n"
+            "#         #\n"
+            "#      .B #\n"
+            "# P    .B #\n"
+            "#      #  #\n"
+            "###########",
+            
+            // Level 2 (2000分触发 - 垂直长廊挑战)
+            "#######\n"
+            "#  .  #\n"
+            "#     #\n"
+            "#   B #\n"
+            "###   #\n"
+            "#P    #\n"
+            "#   B #\n"
+            "#   B #\n"
+            "#    .#\n"
+            "#     #\n"
+            "# .   #\n"
+            "#######",
+            
+            // Level 3 (3000分触发 - 复杂迷宫)
+            "##########\n"
+            "#    .   #\n"
+            "#  B   B #\n"
+            "#  # #   #\n"
+            "#  . P . #\n"
+            "#  # #   #\n"
+            "#  B   B #\n"
+            "#    .   #\n"
+            "##########"
+        };
+        
+        // 加载图片资源
+        loadImages();
+    }
+    
+    void loadImages() {
+        // 墙壁
+        wallImg = QPixmap(":/images/wall.png");
+        if (wallImg.isNull()) {
+            wallImg = QPixmap(cellSize, cellSize);
+            wallImg.fill(QColor(80, 80, 80));
+        }
+        
+        // 目标点
+        targetImg = QPixmap(":/images/target.png");
+        if (targetImg.isNull()) {
+            targetImg = QPixmap(cellSize, cellSize);
+            targetImg.fill(Qt::transparent);
+        }
+        
+        // 毛线球（箱子）
+        boxImg = QPixmap(":/images/yarn_ball.png");
+        if (boxImg.isNull()) {
+            boxImg = QPixmap(cellSize, cellSize);
+            boxImg.fill(QColor(255, 100, 150));  // 粉色毛线球
+        }
+        
+        // 毛线球在目标上
+        boxOnTargetImg = QPixmap(":/images/yarn_ball_on_target.png");
+        if (boxOnTargetImg.isNull()) {
+            boxOnTargetImg = QPixmap(cellSize, cellSize);
+            boxOnTargetImg.fill(QColor(100, 255, 100));  // 绿色表示正确
+        }
+        
+        // 小狗（推箱子模式）
+        dogSokobanImg = QPixmap(":/images/dog_run1.png");
+    }
+    
+    void loadLevel(int levelIndex) {
+        if (levelIndex < 0 || levelIndex >= (int)levels.size()) return;
+        
+        currentLevel = levelIndex;
+        grid.clear();
+        targets.clear();
+        boxes.clear();
+        
+        // 解析关卡字符串
+        std::string levelData = levels[levelIndex];
+        std::vector<char> row;
+        gridHeight = 0;
+        gridWidth = 0;
+        
+        int x = 0, y = 0;
+        for (char c : levelData) {
+            if (c == '\n') {
+                if (!row.empty()) {
+                    grid.push_back(row);
+                    gridWidth = std::max(gridWidth, (int)row.size());
+                    row.clear();
+                    y++;
+                    x = 0;
+                }
+            } else {
+                // 处理特殊符号
+                if (c == 'P') {
+                    playerX = x;
+                    playerY = y;
+                    row.push_back(' ');  // 玩家位置变为空地
+                } else if (c == 'B') {
+                    boxes.push_back(QPoint(x, y));
+                    row.push_back(' ');  // 箱子位置变为空地
+                } else if (c == '.') {
+                    targets.push_back(QPoint(x, y));
+                    row.push_back('.');  // 保留目标点标记
+                } else if (c == '*') {
+                    // 箱子已经在目标上
+                    boxes.push_back(QPoint(x, y));
+                    targets.push_back(QPoint(x, y));
+                    row.push_back('.');
+                } else {
+                    row.push_back(c);
+                }
+                x++;
+            }
+        }
+        
+        if (!row.empty()) {
+            grid.push_back(row);
+            gridWidth = std::max(gridWidth, (int)row.size());
+            gridHeight = (int)grid.size();
+        } else {
+            gridHeight = (int)grid.size();
+        }
+        
+        // 补齐每行长度
+        for (auto& r : grid) {
+            while ((int)r.size() < gridWidth) {
+                r.push_back(' ');
+            }
+        }
+        
+        // 初始化动画位置
+        playerAnimPos = QPointF(playerX * cellSize, playerY * cellSize);
+        isMoving = false;
+    }
+    
+    bool tryMove(int dx, int dy) {
+        if (isMoving) return false;  // 动画中不能移动
+        
+        int newX = playerX + dx;
+        int newY = playerY + dy;
+        
+        // 边界检查
+        if (newX < 0 || newX >= gridWidth || newY < 0 || newY >= gridHeight) {
+            return false;
+        }
+        
+        // 墙壁检查
+        if (grid[newY][newX] == '#') {
+            return false;
+        }
+        
+        // 检查是否有箱子
+        int boxIndex = -1;
+        for (int i = 0; i < (int)boxes.size(); i++) {
+            if (boxes[i].x() == newX && boxes[i].y() == newY) {
+                boxIndex = i;
+                break;
+            }
+        }
+        
+        if (boxIndex != -1) {
+            // 尝试推箱子
+            int boxNewX = newX + dx;
+            int boxNewY = newY + dy;
+            
+            // 箱子新位置边界检查
+            if (boxNewX < 0 || boxNewX >= gridWidth || boxNewY < 0 || boxNewY >= gridHeight) {
+                return false;
+            }
+            
+            // 箱子新位置墙壁检查
+            if (grid[boxNewY][boxNewX] == '#') {
+                return false;
+            }
+            
+            // 箱子新位置是否有其他箱子
+            for (int i = 0; i < (int)boxes.size(); i++) {
+                if (i != boxIndex && boxes[i].x() == boxNewX && boxes[i].y() == boxNewY) {
+                    return false;
+                }
+            }
+            
+            // 可以推箱子
+            movingBoxStart = QPointF(boxes[boxIndex].x() * cellSize, boxes[boxIndex].y() * cellSize);
+            boxes[boxIndex] = QPoint(boxNewX, boxNewY);
+            movingBoxEnd = QPointF(boxNewX * cellSize, boxNewY * cellSize);
+            movingBoxIndex = boxIndex;
+        }
+        
+        // 移动玩家
+        playerX = newX;
+        playerY = newY;
+        isMoving = true;
+        moveProgress = 0;
+        
+        return true;
+    }
+    
+    void update(float dt) {
+        if (isMoving) {
+            moveProgress += dt * 8.0f;  // 移动速度
+            if (moveProgress >= 1.0f) {
+                moveProgress = 1.0f;
+                isMoving = false;
+                movingBoxIndex = -1;
+            }
+            
+            // 更新玩家动画位置（平滑插值）
+            float t = moveProgress;
+            playerAnimPos = QPointF(
+                playerX * cellSize * t + playerAnimPos.x() * (1 - t),
+                playerY * cellSize * t + playerAnimPos.y() * (1 - t)
+            );
+        } else {
+            playerAnimPos = QPointF(playerX * cellSize, playerY * cellSize);
+        }
+    }
+    
+    bool isCompleted() {
+        // 检查所有箱子是否都在目标点上
+        for (const QPoint& box : boxes) {
+            bool onTarget = false;
+            for (const QPoint& target : targets) {
+                if (box == target) {
+                    onTarget = true;
+                    break;
+                }
+            }
+            if (!onTarget) return false;
+        }
+        return true;
+    }
+    
+    void draw(QPainter* painter, int screenWidth, int screenHeight) {
+        if (currentLevel < 0) return;
+        
+        // 计算居中偏移
+        int totalWidth = gridWidth * cellSize;
+        int totalHeight = gridHeight * cellSize;
+        int offsetX = (screenWidth - totalWidth) / 2;
+        int offsetY = (screenHeight - totalHeight) / 2;
+        
+        painter->save();
+        painter->translate(offsetX, offsetY);
+        
+        // 绘制背景
+        painter->fillRect(0, 0, totalWidth, totalHeight, QColor(240, 230, 220));
+        
+        // 绘制网格
+        for (int y = 0; y < gridHeight; y++) {
+            for (int x = 0; x < gridWidth; x++) {
+                QRectF cellRect(x * cellSize, y * cellSize, cellSize, cellSize);
+                
+                char cell = grid[y][x];
+                if (cell == '#') {
+                    // 墙壁
+                    painter->drawPixmap(cellRect, wallImg, wallImg.rect());
+                } else if (cell == '.') {
+                    // 目标点
+                    painter->setPen(Qt::NoPen);
+                    painter->setBrush(QColor(255, 200, 100, 100));
+                    painter->drawEllipse(cellRect.adjusted(cellSize * 0.2, cellSize * 0.2, 
+                                                          -cellSize * 0.2, -cellSize * 0.2));
+                }
+            }
+        }
+        
+        // 绘制箱子
+        for (int i = 0; i < (int)boxes.size(); i++) {
+            QPointF boxPos;
+            
+            // 如果是正在移动的箱子，使用插值位置
+            if (isMoving && i == movingBoxIndex) {
+                float t = moveProgress;
+                boxPos = QPointF(
+                    movingBoxEnd.x() * t + movingBoxStart.x() * (1 - t),
+                    movingBoxEnd.y() * t + movingBoxStart.y() * (1 - t)
+                );
+            } else {
+                boxPos = QPointF(boxes[i].x() * cellSize, boxes[i].y() * cellSize);
+            }
+            
+            QRectF boxRect(boxPos, QSizeF(cellSize, cellSize));
+            
+            // 检查箱子是否在目标上
+            bool onTarget = false;
+            for (const QPoint& target : targets) {
+                if (boxes[i] == target) {
+                    onTarget = true;
+                    break;
+                }
+            }
+            
+            if (onTarget) {
+                painter->drawPixmap(boxRect, boxOnTargetImg, boxOnTargetImg.rect());
+            } else {
+                painter->drawPixmap(boxRect, boxImg, boxImg.rect());
+            }
+        }
+        
+        // 绘制玩家
+        QRectF playerRect(playerAnimPos, QSizeF(cellSize, cellSize));
+        painter->drawPixmap(playerRect, dogSokobanImg, dogSokobanImg.rect());
+        
+        painter->restore();
+        
+        // 绘制UI提示
+        painter->setPen(Qt::black);
+        painter->setFont(QFont("Arial", 14, QFont::Bold));
+        painter->drawText(QRect(0, 10, screenWidth, 30), Qt::AlignCenter,
+                         QString("推箱子关卡 %1/3 - 方向键移动 - ESC退出").arg(currentLevel + 1));
+        
+        // 绘制进度
+        int boxesOnTarget = 0;
+        for (const QPoint& box : boxes) {
+            for (const QPoint& target : targets) {
+                if (box == target) {
+                    boxesOnTarget++;
+                    break;
+                }
+            }
+        }
+        painter->drawText(QRect(0, screenHeight - 40, screenWidth, 30), Qt::AlignCenter,
+                         QString("进度: %1/%2").arg(boxesOnTarget).arg(boxes.size()));
     }
 };
 
@@ -377,7 +803,7 @@ public:
 class Game : public QMainWindow {
 public:
     // 游戏状态
-    int state; // 0=菜单 1=游戏中 2=游戏结束
+    int state; // 0=菜单 1=游戏中 2=游戏结束 3=推箱子模式 4=推箱子完成动画
     
     // 定时器
     QTimer* timer;
@@ -391,11 +817,25 @@ public:
     std::vector<Platform*> platforms;
     std::vector<GameObject*> objects;
     
+    // 推箱子系统
+    SokobanManager* sokobanManager;
+    Basket* currentBasket;  // 当前的毛线筐
+    int nextSokobanScore;   // 下一个触发推箱子的分数
+    int sokobanLevel;       // 当前推箱子关卡索引
+    
+    // 转场动画
+    bool isTransitioning;   // 是否在转场中
+    float transitionProgress;  // 转场进度 0-1
+    int transitionType;     // 0=进入推箱子 1=退出推箱子
+    QPointF dogTransitionPos;  // 小狗转场动画位置
+    float dogTransitionScale;  // 小狗转场缩放
+    int completionTimer;    // 完成关卡后的延迟计时器
+    
     // 相机
     double cameraX;
     
     // 图片
-    QPixmap bgImg, menuImg, heartImg;
+    QPixmap bgImg, groundImg, menuImg, heartImg;
     
     // 区块生成
     int nextChunkX;  // 下一个区块的X坐标
@@ -420,9 +860,27 @@ public:
         connect(timer, &QTimer::timeout, this, &Game::tick);
         
         // 加载图片
-        bgImg = QPixmap(":/images/scene.png");
         menuImg = QPixmap(":/images/menu.png");
         heartImg = QPixmap(":/images/heart.png");
+        
+        // 背景使用scene.png
+        bgImg = QPixmap(":/images/scene.png");
+        
+        // 尝试加载地面图片，如果不存在则使用scene.png
+        groundImg = QPixmap(":/images/ground.png");
+        if (groundImg.isNull()) {
+            groundImg = QPixmap(":/images/scene.png");
+        }
+        
+        // 确保地面图片加载成功
+        if (groundImg.isNull()) {
+            qDebug() << "警告：地面图片加载失败！";
+        } else {
+            qDebug() << "地面图片加载成功，尺寸：" << groundImg.size();
+        }
+        
+        // 设置Platform类的静态地面图片
+        Platform::groundImage = &groundImg;
         
         // 初始化随机数
         rng.seed(std::random_device{}());
@@ -433,6 +891,16 @@ public:
         
         // 创建初始关卡
         createLevel();
+        
+        // 初始化推箱子系统
+        sokobanManager = new SokobanManager();
+        currentBasket = nullptr;
+        nextSokobanScore = 1000;
+        sokobanLevel = 0;
+        isTransitioning = false;
+        transitionProgress = 0;
+        transitionType = 0;
+        completionTimer = 0;
         
         // 初始化游戏
         state = 0;
@@ -448,6 +916,8 @@ public:
     
     ~Game() {
         delete dog;
+        delete sokobanManager;
+        if (currentBasket) delete currentBasket;
         for (auto p : platforms) delete p;
         for (auto obj : objects) delete obj;
     }
@@ -456,19 +926,114 @@ public:
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
         
+        // 推箱子模式
+        if (state == 3) {
+            p.fillRect(rect(), QColor(200, 200, 200));
+            sokobanManager->draw(&p, width(), height());
+            
+            // 淡入效果
+            if (isTransitioning && transitionType == 0) {
+                float alpha = 1.0f - transitionProgress;
+                p.fillRect(rect(), QColor(0, 0, 0, (int)(alpha * 255)));
+            }
+            return;
+        }
+        
+        // 推箱子完成动画
+        if (state == 4) {
+            p.fillRect(rect(), QColor(200, 200, 200));
+            sokobanManager->draw(&p, width(), height());
+            
+            // 胜利提示
+            p.fillRect(rect(), QColor(0, 0, 0, 150));
+            p.setPen(Qt::white);
+            p.setFont(QFont("Arial", 24, QFont::Bold));
+            p.drawText(rect(), Qt::AlignCenter, "关卡完成！\n\n返回跑酷模式...");
+            
+            // 淡出效果
+            if (isTransitioning && transitionType == 1) {
+                p.fillRect(rect(), QColor(0, 0, 0, (int)(transitionProgress * 255)));
+            }
+            return;
+        }
+        
         // 菜单
         if (state == 0) {
+            p.setRenderHint(QPainter::Antialiasing); 
             p.fillRect(rect(), QColor(245, 245, 245));
             p.drawPixmap(rect(), menuImg);
-            p.setPen(Qt::black);
-            p.setFont(QFont("Arial", 18, QFont::Bold));
-            p.drawText(QRect(0, height() - 150, width(), 60), 
-                      Qt::AlignCenter, "按空格开始");
-            
-            // 操作说明
-            p.setFont(QFont("Arial", 14));
-            p.drawText(QRect(0, height() - 90, width(), 80), Qt::AlignCenter,
-                      "马里奥式跳跃系统\n空格=跳跃（长按跳更高） | Shift=奔跑加速\n踩踏敌人可消灭 | 按住跳跃键踩踏弹得更高");
+
+            auto drawStyledButton = [&](const QString &text, int x, int y, int h, QColor color, QFont font) {
+        
+                p.setFont(font);
+                QFontMetrics fm = p.fontMetrics();
+                int w = fm.horizontalAdvance(text) + (h == 60 ? 40 : 20); // 留白：大按键多点，小按键少点
+
+                // 1. 绘制阴影（向下偏移 3-4 像素）
+                p.setPen(Qt::NoPen);
+                p.setBrush(color.darker(150)); // 自动计算深色阴影
+                p.drawRoundedRect(x, y + 4, w, h, 10, 10);
+
+                // 2. 绘制主体按键框
+                p.setBrush(color);
+                p.setPen(QPen(QColor("#5D4037"), 2)); // 棕色边框，更有质感
+                QRect btnRect(x, y, w, h);
+                p.drawRoundedRect(btnRect, 10, 10);
+
+                // 3. 绘制文字
+                p.setPen(QColor("#3E2723")); // 深色文字
+                p.drawText(btnRect, Qt::AlignCenter, text);
+
+                return w; // 返回宽度用于后续排版
+            };
+
+            // --- 1. 绘制“按 SPACE 开始” (主按钮，居中) ---
+            QString mainText = "SPACE 开始游戏";
+            QFont mainFont("Arial", 22, QFont::Bold);
+            QFontMetrics mainFm(mainFont);
+    
+            int mainW = mainFm.horizontalAdvance(mainText) + 40;
+            int mainX = (width() - mainW) / 2; 
+            drawStyledButton(mainText, mainX, height() - 150, 60, QColor("#F3C367"), mainFont); // 使用你喜欢的暖黄色
+
+            // --- 2. 绘制操作说明（模拟游戏按键样式） ---
+            int centerY = height() - 80;
+            int spacing = 15;
+            p.setFont(QFont("Arial", 11, QFont::Bold));
+
+            auto drawKeyRect = [&](const QString &key, const QString &desc, int &currentX) {
+                QFontMetrics fm = p.fontMetrics();
+                int keyWidth = fm.horizontalAdvance(key) + 20;
+                int descWidth = fm.horizontalAdvance(desc) + 5;
+        
+                // A. 绘制按键深色阴影（营造厚度感）
+                p.setPen(Qt::NoPen);
+                p.setBrush(QColor(200, 200, 200)); // 阴影颜色
+                p.drawRoundedRect(currentX, centerY + 3, keyWidth, 30, 8, 8);
+
+                // B. 绘制按键主体
+                p.setBrush(QColor("#FDF5E6")); // 使用你偏好的温润色调
+                p.setPen(QPen(QColor("#8B4513"), 1.5)); // 棕色边框
+                QRect keyRect(currentX, centerY, keyWidth, 30);
+                p.drawRoundedRect(keyRect, 8, 8);
+
+                // C. 写入按键文字
+                p.setPen(Qt::black);
+                p.drawText(keyRect, Qt::AlignCenter, key);
+
+                // D. 写入操作描述
+                currentX += keyWidth + 8;
+                p.setPen(QColor(60, 60, 60));
+                p.drawText(currentX, centerY + 20, desc);
+        
+                currentX += descWidth + spacing;
+            };
+
+            int currentX = width() / 2 - 120; 
+            drawKeyRect("Space", "跳跃", currentX);
+            drawKeyRect("Shift", "加速", currentX);
+            drawKeyRect("A/D", "移动", currentX);
+
             return;
         }
         
@@ -489,7 +1054,26 @@ public:
         for (auto obj : objects) {
             obj->draw(&p);
         }
+        
+        // 绘制毛线筐
+        if (currentBasket && currentBasket->alive) {
+            currentBasket->draw(&p);
+        }
+        
         dog->draw(&p);
+        
+        // 转场动画：小狗跳入筐中
+        if (isTransitioning && transitionType == 0 && state == 1) {
+            // 绘制小狗缩小并下落的动画
+            p.save();
+            QPointF center = dogTransitionPos + QPointF(dog->size.width() / 2, dog->size.height() / 2);
+            p.translate(center);
+            p.scale(dogTransitionScale, dogTransitionScale);
+            p.translate(-center);
+            p.setOpacity(1.0f - transitionProgress * 0.5f);
+            dog->draw(&p);
+            p.restore();
+        }
         
         p.restore();
         
@@ -540,6 +1124,28 @@ public:
             keys.insert(e->key());
         }
         
+        // 推箱子模式的按键处理
+        if (state == 3) {
+            if (e->key() == Qt::Key_Escape) {
+                // ESC退出推箱子模式
+                startTransitionToRunner();
+                return;
+            }
+            
+            if (!e->isAutoRepeat()) {
+                if (e->key() == Qt::Key_Up || e->key() == Qt::Key_W) {
+                    sokobanManager->tryMove(0, -1);
+                } else if (e->key() == Qt::Key_Down || e->key() == Qt::Key_S) {
+                    sokobanManager->tryMove(0, 1);
+                } else if (e->key() == Qt::Key_Left || e->key() == Qt::Key_A) {
+                    sokobanManager->tryMove(-1, 0);
+                } else if (e->key() == Qt::Key_Right || e->key() == Qt::Key_D) {
+                    sokobanManager->tryMove(1, 0);
+                }
+            }
+            return;
+        }
+        
         if (!e->isAutoRepeat() && e->key() == Qt::Key_Space) {
             if (state == 0) {
                 restart();
@@ -575,6 +1181,26 @@ public:
             spawn(elapsed);
             gameUpdate(dt);
             cleanup();
+        } else if (state == 3) {
+            // 推箱子模式更新
+            sokobanManager->update(dt);
+            
+            // 检查是否完成
+            if (sokobanManager->isCompleted() && !isTransitioning) {
+                state = 4;
+                completionTimer = 0;
+            }
+        } else if (state == 4) {
+            // 完成动画
+            completionTimer += elapsed;
+            if (completionTimer >= 2000 && !isTransitioning) {  // 2秒后返回，且未在转场中
+                startTransitionToRunner();
+            }
+        }
+        
+        // 转场动画更新（在所有状态下都执行）
+        if (isTransitioning) {
+            updateTransition(dt);
         }
         
         repaint();
@@ -604,6 +1230,11 @@ public:
             obj->update(dt);
         }
         
+        // 更新毛线筐
+        if (currentBasket && currentBasket->alive) {
+            currentBasket->update(dt);
+        }
+        
         collision();
         camera();
         
@@ -617,6 +1248,9 @@ public:
         
         // 分数
         score = std::max(score, (int)(cameraX / 10));
+        
+        // 检查是否触发推箱子关卡
+        checkSokobanTrigger();
     }
     
     void collision() {
@@ -713,6 +1347,17 @@ public:
                 continue;
             }
             
+            // 毛线筐碰撞检测
+            Basket* basket = dynamic_cast<Basket*>(obj);
+            if (basket && !basket->triggered) {
+                if (dog->getRect().intersects(basket->getRect())) {
+                    // 触发推箱子关卡
+                    basket->triggered = true;
+                    startTransitionToSokoban();
+                }
+                continue;
+            }
+            
             // 障碍物碰撞检测（使用完整碰撞盒，更准确）
             Obstacle* obstacle = dynamic_cast<Obstacle*>(obj);
             if (obstacle) {
@@ -721,8 +1366,6 @@ public:
                 
                 // 检查是否碰撞
                 if (!dogRect.intersects(obstacleRect)) continue;
-                
-                // 判断是否从上方踩踏（小狗在下落且脚部碰到障碍物顶部）
                 bool stompedFromAbove = (dog->speedY > 0) && 
                                        (dog->lastPos.y() + dog->size.height() <= obstacleRect.top() + 10);
                 
@@ -740,6 +1383,7 @@ public:
                         timer->stop();
                     }
                 }
+                
             }
         }
         
@@ -835,6 +1479,10 @@ public:
             GameObject* obj = *it;
             double right = obj->pos.x() + obj->size.width();
             if (!obj->alive || right < cameraX) {
+                // 如果要删除的对象是 currentBasket，先清空指针
+                if (obj == currentBasket) {
+                    currentBasket = nullptr;
+                }
                 delete obj;
                 it = objects.erase(it);
             } else {
@@ -852,10 +1500,21 @@ public:
         for (auto plat : platforms) delete plat;
         platforms.clear();
         
+        if (currentBasket) {
+            delete currentBasket;
+            currentBasket = nullptr;
+        }
+        
         spawnTime = 0;
         cameraX = 0;
         score = 0;
         lives = 3;
+        
+        // 重置推箱子系统
+        nextSokobanScore = 1000;
+        sokobanLevel = 0;
+        isTransitioning = false;
+        transitionProgress = 0;
         
         // 重置区块系统
         nextChunkX = 0;
@@ -955,8 +1614,8 @@ public:
         platforms.push_back(new Platform(startX + 700, 500, chunkWidth - 700, 120, GROUND));
         
         // 坑洞上方的悬浮方块（提高高度，更容易跳上去）
-        platforms.push_back(new Platform(startX + 450, 300, 64, 64, BLOCK));  // 从350提高到300
-        platforms.push_back(new Platform(startX + 550, 300, 64, 64, BLOCK));  // 从350提高到300
+        platforms.push_back(new Platform(startX + 450, 320, 64, 64, BLOCK));  // 从350提高到300
+        platforms.push_back(new Platform(startX + 550, 320, 64, 64, BLOCK));  // 从350提高到300
         
         // 空中金币
         objects.push_back(new Coin(startX + 500, 230));  // 金币也相应提高
@@ -967,10 +1626,9 @@ public:
         // 地面
         platforms.push_back(new Platform(startX, 500, chunkWidth, 120, GROUND));
         
-        // 低层平台（修复：从Y=400改为Y=372，避免低于地面）
-        // 底部位置：372 + 64 = 436（高于地面500）
-        platforms.push_back(new Platform(startX + 200, 372, 128, 64, BLOCK));
-        platforms.push_back(new Platform(startX + 500, 372, 128, 64, BLOCK));
+        
+        platforms.push_back(new Platform(startX + 200, 350, 128, 64, BLOCK));
+        platforms.push_back(new Platform(startX + 500, 350, 128, 64, BLOCK));
         
         // 中层平台
         platforms.push_back(new Platform(startX + 350, 300, 128, 64, BLOCK));
@@ -1019,15 +1677,13 @@ public:
         platforms.push_back(new Platform(startX, 500, chunkWidth, 120, GROUND));
         
         // 一排问号方块（增大到96x96）
-        // 问号方块范围：X = 200 到 656 (560 + 96)
-        platforms.push_back(new Platform(startX + 200, 268, 96, 96, QUESTION));
-        platforms.push_back(new Platform(startX + 320, 268, 96, 96, QUESTION));
-        platforms.push_back(new Platform(startX + 440, 268, 96, 96, QUESTION));
-        platforms.push_back(new Platform(startX + 560, 268, 96, 96, QUESTION));
+        platforms.push_back(new Platform(startX + 150, 268, 96, 96, QUESTION));
+        platforms.push_back(new Platform(startX + 350, 128, 96, 96, QUESTION));
+        platforms.push_back(new Platform(startX + 600, 88, 96, 96, QUESTION));
         
-        // 普通方块（在问号方块之后）
-        platforms.push_back(new Platform(startX + 700, 350, 64, 64, BLOCK));
-        platforms.push_back(new Platform(startX + 800, 350, 64, 64, BLOCK));
+        // 普通方块
+        platforms.push_back(new Platform(startX + 350, 350, 128, 64, BLOCK));
+        platforms.push_back(new Platform(startX + 560, 300, 128, 64, BLOCK));
         
         // 障碍物（确保在问号方块区域之外，避免在方块下方）
         // 问号方块结束位置：656，安全距离：至少100像素
@@ -1066,11 +1722,78 @@ public:
         while (objIt != objects.end()) {
             GameObject* obj = *objIt;
             if (obj->pos.x() + obj->size.width() < cleanupX || !obj->alive) {
+                // 如果要删除的对象是 currentBasket，先清空指针
+                if (obj == currentBasket) {
+                    currentBasket = nullptr;
+                }
                 delete obj;
                 objIt = objects.erase(objIt);
             } else {
                 ++objIt;
             }
+        }
+    }
+    
+    // 检查是否触发推箱子关卡
+    void checkSokobanTrigger() {
+        if (score >= nextSokobanScore && !currentBasket && sokobanLevel < 3) {
+            // 在前方生成毛线筐
+            double basketX = cameraX + width() + 200;
+            double basketY = 420;  // 地面上方
+            currentBasket = new Basket(basketX, basketY);
+            objects.push_back(currentBasket);
+        }
+    }
+    
+    // 开始转场到推箱子模式
+    void startTransitionToSokoban() {
+        isTransitioning = true;
+        transitionType = 0;  // 进入推箱子
+        transitionProgress = 0;
+        dogTransitionPos = dog->pos;
+        dogTransitionScale = 1.0f;
+    }
+    
+    // 开始转场回跑酷模式
+    void startTransitionToRunner() {
+        isTransitioning = true;
+        transitionType = 1;  // 退出推箱子
+        transitionProgress = 0;
+    }
+    
+    // 更新转场动画
+    void updateTransition(float dt) {
+        transitionProgress += dt * 2.0f;  // 0.5秒转场
+        
+        if (transitionProgress >= 1.0f) {
+            transitionProgress = 1.0f;
+            isTransitioning = false;
+            
+            if (transitionType == 0) {
+                // 完成进入推箱子的转场
+                state = 3;
+                sokobanManager->loadLevel(sokobanLevel);
+            } else if (transitionType == 1) {
+                // 完成退出推箱子的转场
+                state = 1;
+                
+                // 更新下一个触发分数（无论是否完成所有关卡）
+                sokobanLevel++;
+                if (sokobanLevel < 3) {
+                    nextSokobanScore = 1000 * (sokobanLevel + 1);
+                } else {
+                    // 已完成所有关卡，不再生成毛线筐
+                    nextSokobanScore = 999999;  // 设置一个很大的值
+                }
+                
+                currentBasket = nullptr;  // 清除毛线筐引用
+            }
+        }
+        
+        // 进入推箱子的动画：小狗缩小并下落
+        if (transitionType == 0 && state == 1) {
+            dogTransitionScale = 1.0f - transitionProgress * 0.8f;  // 缩小到20%
+            dogTransitionPos.setY(dogTransitionPos.y() + transitionProgress * 100);  // 下落
         }
     }
 };
