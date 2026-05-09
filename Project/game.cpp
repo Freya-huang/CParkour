@@ -708,14 +708,43 @@ public:
     void draw(QPainter* painter, int screenWidth, int screenHeight) {
         if (currentLevel < 0) return;
         
-        // 计算居中偏移
+        // 计算地图总尺寸
         int totalWidth = gridWidth * cellSize;
         int totalHeight = gridHeight * cellSize;
-        int offsetX = (screenWidth - totalWidth) / 2;
-        int offsetY = (screenHeight - totalHeight) / 2;
+        
+        // 计算缩放比例（如果地图超出屏幕）
+        float scaleX = 1.0f;
+        float scaleY = 1.0f;
+        
+        // 留出上下各50像素的空间给UI
+        int availableWidth = screenWidth - 40;  // 左右各留20像素
+        int availableHeight = screenHeight - 100;  // 上下各留50像素
+        
+        if (totalWidth > availableWidth) {
+            scaleX = (float)availableWidth / totalWidth;
+        }
+        if (totalHeight > availableHeight) {
+            scaleY = (float)availableHeight / totalHeight;
+        }
+        
+        // 使用较小的缩放比例，保持宽高比
+        float scale = std::min(scaleX, scaleY);
+        
+        // 应用缩放后的尺寸
+        int scaledWidth = (int)(totalWidth * scale);
+        int scaledHeight = (int)(totalHeight * scale);
+        
+        // 计算居中偏移
+        int offsetX = (screenWidth - scaledWidth) / 2;
+        int offsetY = (screenHeight - scaledHeight) / 2;
         
         painter->save();
         painter->translate(offsetX, offsetY);
+        
+        // 应用缩放
+        if (scale < 1.0f) {
+            painter->scale(scale, scale);
+        }
         
         // 绘制背景
         painter->fillRect(0, 0, totalWidth, totalHeight, QColor(240, 230, 220));
@@ -830,6 +859,7 @@ public:
     QPointF dogTransitionPos;  // 小狗转场动画位置
     float dogTransitionScale;  // 小狗转场缩放
     int completionTimer;    // 完成关卡后的延迟计时器
+    bool sokobanCompleted;  // 是否完成了推箱子关卡（而非ESC退出）
     
     // 相机
     double cameraX;
@@ -901,6 +931,7 @@ public:
         transitionProgress = 0;
         transitionType = 0;
         completionTimer = 0;
+        sokobanCompleted = false;
         
         // 初始化游戏
         state = 0;
@@ -1128,6 +1159,9 @@ public:
         if (state == 3) {
             if (e->key() == Qt::Key_Escape) {
                 // ESC退出推箱子模式
+                sokobanCompleted = false;  // 标记为未完成（ESC退出）
+                state = 4;  // 先切换到完成动画状态，避免竞态条件
+                completionTimer = 2000;  // 立即触发返回（跳过2秒等待）
                 startTransitionToRunner();
                 return;
             }
@@ -1189,6 +1223,7 @@ public:
             if (sokobanManager->isCompleted() && !isTransitioning) {
                 state = 4;
                 completionTimer = 0;
+                sokobanCompleted = true;  // 标记为完成关卡
             }
         } else if (state == 4) {
             // 完成动画
@@ -1515,6 +1550,7 @@ public:
         sokobanLevel = 0;
         isTransitioning = false;
         transitionProgress = 0;
+        sokobanCompleted = false;
         
         // 重置区块系统
         nextChunkX = 0;
@@ -1776,6 +1812,12 @@ public:
             } else if (transitionType == 1) {
                 // 完成退出推箱子的转场
                 state = 1;
+                
+                // 如果是完成关卡（而非ESC退出），恢复一条生命
+                if (sokobanCompleted && lives < 3) {
+                    lives++;
+                    sokobanCompleted = false;  // 重置标志
+                }
                 
                 // 更新下一个触发分数（无论是否完成所有关卡）
                 sokobanLevel++;
