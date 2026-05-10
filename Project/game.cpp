@@ -27,13 +27,10 @@ public:
     
     virtual ~GameObject() {}
     
-    // 获取碰撞区域
     QRectF getRect() {
-        // 直接返回完整矩形，不缩减
         return QRectF(pos, size);
     }
     
-    // 获取用于显示碰撞的缩减矩形（仅用于金币等物品）
     QRectF getShrinkRect() {
         QRectF rect(pos, size);
         double shrink = 0.1;
@@ -61,11 +58,11 @@ enum PlatformType {
 class Platform : public GameObject {
 public:
     PlatformType type;
-    bool hasItem;  // 问号方块是否还有物品
-    int bounceTimer;  // 被顶时的弹跳动画
-    QPixmap questionBlockImg;  // 问号方块图片
-    QPixmap questionBlockUsedImg;  // 使用后的问号方块图片
-    static QPixmap* groundImage;  // 静态地面图片指针
+    bool hasItem;  
+    int bounceTimer; 
+    QPixmap questionBlockImg; 
+    QPixmap questionBlockUsedImg;  
+    static QPixmap* groundImage;  
     
     Platform(double x, double y, double w, double h, PlatformType t = GROUND) {
         pos = QPointF(x, y);
@@ -75,38 +72,19 @@ public:
         bounceTimer = 0;
         
         if (type == GROUND) {
-            // 地面使用静态地面图片
             if (groundImage && !groundImage->isNull()) {
                 image = *groundImage;
             } else {
-                // 如果静态图片未设置，尝试直接加载
                 image = QPixmap(":/images/scene.png");
             }
         } else if (type == QUESTION) {
-            // 加载问号方块图片
             questionBlockImg = QPixmap(":/images/question_block.png");
             questionBlockUsedImg = QPixmap(":/images/question_block_used.png");
             
-            // 如果图片加载失败，使用纯色作为后备
-            if (questionBlockImg.isNull()) {
-                questionBlockImg = QPixmap(64, 64);
-                questionBlockImg.fill(QColor(255, 200, 0));  // 金色
-            }
-            if (questionBlockUsedImg.isNull()) {
-                questionBlockUsedImg = QPixmap(64, 64);
-                questionBlockUsedImg.fill(QColor(150, 150, 150));  // 灰色
-            }
-            
             image = questionBlockImg;
         } else if (type == BLOCK) {
-            // 加载砖块图片
             image = QPixmap(":/images/block.png");
-            
-            // 如果图片加载失败，使用纯色作为后备
-            if (image.isNull()) {
-                image = QPixmap(64, 64);
-                image.fill(QColor(139, 69, 19));  // 棕色砖块
-            }
+
         }
     }
     
@@ -142,17 +120,6 @@ public:
             } else {
                 painter->drawPixmap(rect, image, image.rect());
                 
-                // 如果问号方块图片加载失败（使用纯色后备），则画问号文字
-                if (type == QUESTION && hasItem && questionBlockImg.width() == 64 && questionBlockImg.height() == 64) {
-                    // 检查是否是纯色填充（后备方案）
-                    QImage img = questionBlockImg.toImage();
-                    if (img.pixel(0, 0) == img.pixel(32, 32)) {
-                        // 可能是纯色，画问号
-                        painter->setPen(Qt::white);
-                        painter->setFont(QFont("Arial", 32, QFont::Bold));
-                        painter->drawText(rect, Qt::AlignCenter, "?");
-                    }
-                }
             }
         }
     }
@@ -164,11 +131,11 @@ QPixmap* Platform::groundImage = nullptr;
 // 金币
 class Coin : public GameObject {
 public:
-    bool isFromBlock;  // 是否从方块弹出
-    float velocityY;   // 垂直速度（用于弹出动画）
-    float gravity;     // 重力
-    int lifetime;      // 生命周期（毫秒）
-    int maxLifetime;   // 最大生命周期
+    bool isFromBlock;  
+    float velocityY;   
+    float gravity;     
+    int lifetime;      
+    int maxLifetime;   
     
     Coin(double x, double y, bool fromBlock = false) {
         pos = QPointF(x, y);
@@ -238,11 +205,11 @@ class Dog : public GameObject {
 public:
     QPointF lastPos;
     float speedY;
-    float speedX;  // 水平速度（用于助跑）
+    float speedX;  
     bool onGround;
-    bool wasOnGround;  // 上一帧是否在地面
-    int coyoteTime;  // 土狼时间（毫秒）
-    bool jumpPressed;  // 跳跃键是否按下
+    bool wasOnGround;  
+    int coyoteTime;  
+    bool jumpPressed;  
     QPixmap img1, img2;
     int animTimer;
     bool showImg1;
@@ -401,11 +368,6 @@ public:
         triggered = false;
         animTimer = 0;
         
-        // 如果图片加载失败，使用纯色后备
-        if (image.isNull()) {
-            image = QPixmap(80, 80);
-            image.fill(QColor(139, 69, 19, 200));  // 棕色半透明
-        }
     }
     
     void draw(QPainter* painter) override {
@@ -998,27 +960,23 @@ public:
         
                 p.setFont(font);
                 QFontMetrics fm = p.fontMetrics();
-                int w = fm.horizontalAdvance(text) + (h == 60 ? 40 : 20); // 留白：大按键多点，小按键少点
+                int w = fm.horizontalAdvance(text) + (h == 60 ? 40 : 20); 
 
-                // 1. 绘制阴影（向下偏移 3-4 像素）
                 p.setPen(Qt::NoPen);
-                p.setBrush(color.darker(150)); // 自动计算深色阴影
+                p.setBrush(color.darker(150));
                 p.drawRoundedRect(x, y + 4, w, h, 10, 10);
 
-                // 2. 绘制主体按键框
                 p.setBrush(color);
-                p.setPen(QPen(QColor("#5D4037"), 2)); // 棕色边框，更有质感
+                p.setPen(QPen(QColor("#5D4037"), 2)); 
                 QRect btnRect(x, y, w, h);
                 p.drawRoundedRect(btnRect, 10, 10);
 
-                // 3. 绘制文字
-                p.setPen(QColor("#3E2723")); // 深色文字
+                p.setPen(QColor("#3E2723")); 
                 p.drawText(btnRect, Qt::AlignCenter, text);
 
-                return w; // 返回宽度用于后续排版
+                return w; 
             };
 
-            // --- 1. 绘制“按 SPACE 开始” (主按钮，居中) ---
             QString mainText = "SPACE 开始游戏";
             QFont mainFont("Arial", 22, QFont::Bold);
             QFontMetrics mainFm(mainFont);
@@ -1027,7 +985,6 @@ public:
             int mainX = (width() - mainW) / 2; 
             drawStyledButton(mainText, mainX, height() - 150, 60, QColor("#F3C367"), mainFont); // 使用你喜欢的暖黄色
 
-            // --- 2. 绘制操作说明（模拟游戏按键样式） ---
             int centerY = height() - 80;
             int spacing = 15;
             p.setFont(QFont("Arial", 11, QFont::Bold));
@@ -1037,22 +994,18 @@ public:
                 int keyWidth = fm.horizontalAdvance(key) + 20;
                 int descWidth = fm.horizontalAdvance(desc) + 5;
         
-                // A. 绘制按键深色阴影（营造厚度感）
                 p.setPen(Qt::NoPen);
-                p.setBrush(QColor(200, 200, 200)); // 阴影颜色
+                p.setBrush(QColor(200, 200, 200)); 
                 p.drawRoundedRect(currentX, centerY + 3, keyWidth, 30, 8, 8);
 
-                // B. 绘制按键主体
-                p.setBrush(QColor("#FDF5E6")); // 使用你偏好的温润色调
-                p.setPen(QPen(QColor("#8B4513"), 1.5)); // 棕色边框
+                p.setBrush(QColor("#FDF5E6")); 
+                p.setPen(QPen(QColor("#8B4513"), 1.5)); 
                 QRect keyRect(currentX, centerY, keyWidth, 30);
                 p.drawRoundedRect(keyRect, 8, 8);
 
-                // C. 写入按键文字
                 p.setPen(Qt::black);
                 p.drawText(keyRect, Qt::AlignCenter, key);
 
-                // D. 写入操作描述
                 currentX += keyWidth + 8;
                 p.setPen(QColor(60, 60, 60));
                 p.drawText(currentX, centerY + 20, desc);
@@ -1545,19 +1498,17 @@ public:
         score = 0;
         lives = 3;
         
-        // 重置推箱子系统
         nextSokobanScore = 1000;
         sokobanLevel = 0;
         isTransitioning = false;
         transitionProgress = 0;
         sokobanCompleted = false;
         
-        // 重置区块系统
         nextChunkX = 0;
         
         delete dog;
-        dog = new Dog(80, 404);  // 地面高度500 - 小狗高度96 = 404
-        dog->speedX = 0;  // 确保重置水平速度
+        dog = new Dog(80, 404);  
+        dog->speedX = 0;  
         dog->speedY = 0;
         dog->onGround = true;
         dog->coyoteTime = 0;
@@ -1572,10 +1523,9 @@ public:
     }
     
     void createLevel() {
-        // 创建起始区块（前3个区块）
-        generateChunk();  // 第一个区块
-        generateChunk();  // 第二个区块
-        generateChunk();  // 第三个区块
+        generateChunk();
+        generateChunk();
+        generateChunk();
     }
     
     // 生成一个新区块
@@ -1609,15 +1559,14 @@ public:
     
     // 区块类型1：平原区（简单地面）
     void generatePlainChunk(int startX) {
-        // 地面
+        
         platforms.push_back(new Platform(startX, 500, chunkWidth, 120, GROUND));
         
-        // 随机添加问号方块（50%概率）
+        // 随机添加问号方块
         std::uniform_int_distribution<int> questionChance(0, 1);
         if (questionChance(rng) == 0) {
             std::uniform_real_distribution<double> questionX(startX + 300, startX + chunkWidth - 300);
             double qx = questionX(rng);
-            // 问号方块在空中，从地面起跳可以顶到
             platforms.push_back(new Platform(qx, 308, 96, 96, QUESTION));
         }
         
@@ -1641,28 +1590,20 @@ public:
     
     // 区块类型2：坑洞区（需要跳跃）
     void generatePitChunk(int startX) {
-        // 坑洞前的地面
         platforms.push_back(new Platform(startX, 500, 400, 120, GROUND));
-        
-        // 坑洞（400-700之间没有地面）
-        
-        // 坑洞后的地面
         platforms.push_back(new Platform(startX + 700, 500, chunkWidth - 700, 120, GROUND));
-        
-        // 坑洞上方的悬浮方块（提高高度，更容易跳上去）
-        platforms.push_back(new Platform(startX + 450, 320, 64, 64, BLOCK));  // 从350提高到300
-        platforms.push_back(new Platform(startX + 550, 320, 64, 64, BLOCK));  // 从350提高到300
-        
-        // 空中金币
-        objects.push_back(new Coin(startX + 500, 230));  // 金币也相应提高
+
+        platforms.push_back(new Platform(startX + 450, 320, 64, 64, BLOCK));  
+        platforms.push_back(new Platform(startX + 550, 320, 64, 64, BLOCK));  
+
+        objects.push_back(new Coin(startX + 500, 230));
     }
     
     // 区块类型3：平台区（多层平台）
     void generatePlatformChunk(int startX) {
         // 地面
         platforms.push_back(new Platform(startX, 500, chunkWidth, 120, GROUND));
-        
-        
+    
         platforms.push_back(new Platform(startX + 200, 350, 128, 64, BLOCK));
         platforms.push_back(new Platform(startX + 500, 350, 128, 64, BLOCK));
         
@@ -1670,14 +1611,13 @@ public:
         platforms.push_back(new Platform(startX + 350, 300, 128, 64, BLOCK));
         platforms.push_back(new Platform(startX + 650, 300, 128, 64, BLOCK));
         
-        // 问号方块（增大到96x96，更显眼）
-        // 位置在中层平台上方，需要在中层平台上起跳才能顶到
+        // 问号方块
         platforms.push_back(new Platform(startX + 400, 100, 96, 96, QUESTION));
         
         // 金币
-        objects.push_back(new Coin(startX + 250, 302));  // 低层平台上方
-        objects.push_back(new Coin(startX + 550, 302));  // 低层平台上方
-        objects.push_back(new Coin(startX + 700, 198));  // 中层平台上方
+        objects.push_back(new Coin(startX + 250, 302)); 
+        objects.push_back(new Coin(startX + 550, 302)); 
+        objects.push_back(new Coin(startX + 700, 198)); 
     }
     
     // 区块类型4：阶梯区（爬升）
@@ -1700,7 +1640,7 @@ public:
         // 地面继续
         platforms.push_back(new Platform(startX + 900, 500, chunkWidth - 900, 120, GROUND));
         
-        // 金币（移除问号方块，只保留金币）
+        // 金币
         objects.push_back(new Coin(startX + 350, 300));
         objects.push_back(new Coin(startX + 430, 240));
         objects.push_back(new Coin(startX + 510, 180));
@@ -1712,7 +1652,7 @@ public:
         // 地面
         platforms.push_back(new Platform(startX, 500, chunkWidth, 120, GROUND));
         
-        // 一排问号方块（增大到96x96）
+        // 一排问号方块
         platforms.push_back(new Platform(startX + 150, 268, 96, 96, QUESTION));
         platforms.push_back(new Platform(startX + 350, 128, 96, 96, QUESTION));
         platforms.push_back(new Platform(startX + 600, 88, 96, 96, QUESTION));
@@ -1722,14 +1662,11 @@ public:
         platforms.push_back(new Platform(startX + 560, 300, 128, 64, BLOCK));
         
         // 障碍物（确保在问号方块区域之外，避免在方块下方）
-        // 问号方块结束位置：656，安全距离：至少100像素
         std::uniform_int_distribution<int> obstacleChance(0, 2);
         if (obstacleChance(rng) == 0) {
-            // 障碍物在问号方块之前（区块开始处）
             std::uniform_real_distribution<double> obstacleX(startX + 50, startX + 150);
             objects.push_back(new Obstacle(obstacleX(rng), 452));
         } else if (obstacleChance(rng) == 1) {
-            // 障碍物在问号方块之后（区块结束处）
             std::uniform_real_distribution<double> obstacleX(startX + 900, startX + 1100);
             objects.push_back(new Obstacle(obstacleX(rng), 452));
         }
@@ -1758,7 +1695,6 @@ public:
         while (objIt != objects.end()) {
             GameObject* obj = *objIt;
             if (obj->pos.x() + obj->size.width() < cleanupX || !obj->alive) {
-                // 如果要删除的对象是 currentBasket，先清空指针
                 if (obj == currentBasket) {
                     currentBasket = nullptr;
                 }
